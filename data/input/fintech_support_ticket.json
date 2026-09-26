@@ -1,0 +1,16 @@
+{
+    "name": "Rahul Sharma",
+    "phone": "+919876543210",
+    "email": "rahul@example.com",
+    "age": 43,
+    "city": "Pune",
+    "occupation": "Cardiologist",
+    "government_id": "GOV-482913",
+    "bank_account": "123456789012",
+    "transaction_id": "TXN-847291",
+    "merchant": "Example Store",
+    "amount": 18450,
+    "error_code": "PAY-402",
+    "transaction_category": "retail",
+    "free_text_note": "Customer reported an issue after attending a cardiology appointment related to an insurance claim."
+}

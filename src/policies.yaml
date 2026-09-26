@@ -1,0 +1,38 @@
+internal_fraud_system:
+  aggregate_analysis:
+    age: MASK
+    bank_account: BLOCK
+    city: ALLOW
+    free_text_note: REDACT
+    government_id: REDACT
+    name: REDACT
+    occupation: ALLOW
+  fraud_investigation:
+    age: MASK
+    bank_account: BLOCK
+    city: ALLOW
+    free_text_note: MASK
+    government_id: BLOCK
+    name: REDACT
+    occupation: ALLOW
+marketing_analytics:
+  aggregate_analysis:
+    age: GENERALIZE
+    bank_account: REMOVE
+    city: GENERALIZE
+    email: REMOVE
+    financial_context: REMOVE
+    government_id: REMOVE
+    medical_context: REMOVE
+    name: REMOVE
+    occupation: ALLOW
+    phone: REMOVE
+third_party_llm:
+  customer_support:
+    age: MASK
+    bank_account: BLOCK
+    city: ALLOW
+    free_text_note: REDACT
+    government_id: BLOCK
+    name: REDACT
+    occupation: ALLOW

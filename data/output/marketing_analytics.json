@@ -1,0 +1,139 @@
+{
+    "metadata": {
+        "audit_id": "aaff7168-1f2d-4fef-90b5-9fb8b1d3713e",
+        "destination": "marketing_analytics",
+        "purpose": "aggregate_analysis",
+        "risk_assessment": {
+            "overall_risk": 1.0,
+            "max_sensitivity": 0.95,
+            "linkage_risk": 0.85,
+            "destination_trust": 0.6,
+            "purpose_scope": 0.8
+        }
+    },
+    "explanations": [
+        {
+            "field": "name",
+            "categories": [
+                "PERSON"
+            ],
+            "action": "REMOVE",
+            "risk": 0.8,
+            "reason": "Direct field policy enforcement: name",
+            "detection_method": "presidio_pattern"
+        },
+        {
+            "field": "phone",
+            "categories": [
+                "PHONE_NUMBER"
+            ],
+            "action": "REMOVE",
+            "risk": 0.8,
+            "reason": "Direct field policy enforcement: phone",
+            "detection_method": "presidio_pattern"
+        },
+        {
+            "field": "email",
+            "categories": [
+                "EMAIL_ADDRESS"
+            ],
+            "action": "REMOVE",
+            "risk": 0.8,
+            "reason": "Policy enforcement on detected category: email",
+            "detection_method": "presidio_pattern"
+        },
+        {
+            "field": "age",
+            "categories": [
+                "quasi_identifier"
+            ],
+            "action": "GENERALIZE",
+            "risk": 0.85,
+            "reason": "Generalization applied due to composite linkage risk of 0.85 from fields: ['age', 'city', 'occupation']",
+            "detection_method": "heuristic_linkage"
+        },
+        {
+            "field": "city",
+            "categories": [
+                "LOCATION",
+                "quasi_identifier"
+            ],
+            "action": "GENERALIZE",
+            "risk": 0.85,
+            "reason": "Generalization applied due to composite linkage risk of 0.85 from fields: ['age', 'city', 'occupation']",
+            "detection_method": "presidio_pattern+heuristic_linkage"
+        },
+        {
+            "field": "occupation",
+            "categories": [
+                "quasi_identifier"
+            ],
+            "action": "ALLOW",
+            "risk": 0.85,
+            "reason": "Direct field policy enforcement: occupation",
+            "detection_method": "heuristic_linkage"
+        },
+        {
+            "field": "government_id",
+            "categories": [
+                "US_DRIVER_LICENSE",
+                "government_id"
+            ],
+            "action": "REMOVE",
+            "risk": 0.95,
+            "reason": "Policy enforcement on detected category: government_id",
+            "detection_method": "presidio_pattern+static_mapping"
+        },
+        {
+            "field": "bank_account",
+            "categories": [
+                "DATE_TIME",
+                "bank_account"
+            ],
+            "action": "REMOVE",
+            "risk": 0.95,
+            "reason": "Policy enforcement on detected category: bank_account",
+            "detection_method": "presidio_pattern+static_mapping"
+        },
+        {
+            "field": "transaction_id",
+            "categories": [
+                "US_DRIVER_LICENSE"
+            ],
+            "action": "ALLOW",
+            "risk": 0.8,
+            "reason": "No sensitive patterns detected; default allow.",
+            "detection_method": "presidio_pattern"
+        },
+        {
+            "field": "error_code",
+            "categories": [
+                "LOCATION"
+            ],
+            "action": "ALLOW",
+            "risk": 0.8,
+            "reason": "No sensitive patterns detected; default allow.",
+            "detection_method": "presidio_pattern"
+        },
+        {
+            "field": "free_text_note",
+            "categories": [
+                "medical_context"
+            ],
+            "action": "REMOVE",
+            "risk": 0.9,
+            "reason": "Policy enforcement on detected category: medical_context",
+            "detection_method": "semantic_embedding"
+        }
+    ],
+    "data": {
+        "age": "40-49",
+        "city": "Regional Area",
+        "occupation": "Cardiologist",
+        "transaction_id": "TXN-847291",
+        "merchant": "Example Store",
+        "amount": 18450,
+        "error_code": "PAY-402",
+        "transaction_category": "retail"
+    }
+}
