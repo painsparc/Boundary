@@ -1,0 +1,19 @@
+# Boundary backend runtime + test dependencies
+# Verified against the repository's documented Python backend stack.
+# Recommended interpreter: Python 3.11.x
+
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.12.5
+PyYAML==6.0.3
+requests==2.32.3
+numpy==1.26.4
+presidio-analyzer==2.2.364
+sentence-transformers==3.3.1
+spacy==3.8.3
+ollama==0.4.7
+pytest==8.3.4
+
+# sentence-transformers runtime backend
+torch==2.5.1
+transformers==4.47.1
