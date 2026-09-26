@@ -1,4 +1,3 @@
-````markdown
 # Boundary
 
 > **Context-aware sensitive-data protection at the system boundary.**
