@@ -7,14 +7,16 @@ internal_fraud_system:
     government_id: REDACT
     name: REDACT
     occupation: ALLOW
+
   fraud_investigation:
     age: MASK
-    bank_account: BLOCK
+    bank_account: ALLOW
     city: ALLOW
     free_text_note: MASK
     government_id: BLOCK
     name: REDACT
     occupation: ALLOW
+
 marketing_analytics:
   aggregate_analysis:
     age: GENERALIZE
@@ -27,10 +29,11 @@ marketing_analytics:
     name: REMOVE
     occupation: ALLOW
     phone: REMOVE
+
 third_party_llm:
   customer_support:
     age: MASK
-    bank_account: BLOCK
+    bank_account: REDACT
     city: ALLOW
     free_text_note: REDACT
     government_id: BLOCK
