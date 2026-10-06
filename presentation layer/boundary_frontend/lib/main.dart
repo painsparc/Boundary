@@ -33,7 +33,77 @@ class BoundaryDashboard extends StatefulWidget {
 }
 
 class _BoundaryDashboardState extends State<BoundaryDashboard> {
-  final String apiUrl = "http://127.0.0.1:8000"; 
+  // Override at build/run time: --dart-define=BOUNDARY_API_URL=... --dart-define=BOUNDARY_ADMIN_KEY=...
+  static const String apiUrl = String.fromEnvironment('BOUNDARY_API_URL', defaultValue: 'http://127.0.0.1:8000');
+  static const String _adminKey = String.fromEnvironment('BOUNDARY_ADMIN_KEY');
+  static const List<String> _allDestinations = ['third_party_llm', 'internal_fraud_system', 'marketing_analytics'];
+  static const List<String> _allPurposes = ['customer_support', 'fraud_investigation', 'aggregate_analysis'];
+
+  Map<String, List<String>> _routes = {};   // destination -> purposes that have a policy (from GET /routes)
+
+  Map<String, String> get _jsonHeaders => {
+        "Content-Type": "application/json",
+        if (_adminKey.isNotEmpty) "X-API-Key": _adminKey,
+      };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRoutes();
+  }
+
+  Future<void> _loadRoutes() async {
+    try {
+      final r = await http.get(Uri.parse("$apiUrl/routes"));
+      if (r.statusCode == 200 && mounted) {
+        final d = jsonDecode(r.body)['destinations'] as Map<String, dynamic>;
+        setState(() => _routes = d.map((k, v) => MapEntry(k, List<String>.from(v))));
+      }
+    } catch (_) {/* fall back to the static lists */}
+  }
+
+  /// Intercept mode only offers combinations that have a policy; config mode offers all purposes.
+  List<String> get _purposeOptions {
+    final configured = _routes[_destination] ?? const <String>[];
+    return (_isConfigMode || configured.isEmpty) ? _allPurposes : configured;
+  }
+
+  void _resetDraft() {
+    _proposedRules = null;
+    _lockedRules = {};
+    _interceptResult = null;
+  }
+
+  void _onDestinationChanged(String? v) => setState(() {
+        _destination = v!;
+        if (!_purposeOptions.contains(_purpose)) _purpose = _purposeOptions.first;
+        _resetDraft();   // rules proposed for another route must never be locked onto this one
+      });
+
+  void _onPurposeChanged(String? v) => setState(() {
+        _purpose = v!;
+        _resetDraft();
+      });
+
+  String _errorDetail(http.Response r) {
+    try {
+      final d = jsonDecode(r.body)['detail'];
+      if (d is Map && d['violations'] is List) return (d['violations'] as List).join('\n');
+      return d.toString();
+    } catch (_) {
+      return "HTTP ${r.statusCode}";
+    }
+  }
+
+  Map<String, dynamic>? _parseInput() {
+    try {
+      final v = jsonDecode(_inputController.text);
+      if (v is Map<String, dynamic>) return v;
+    } catch (_) {}
+    _showError("Input must be a valid JSON object.");
+    return null;
+  }
+
   
   bool _isConfigMode = false;
   String _destination = 'third_party_llm';
@@ -48,8 +118,8 @@ class _BoundaryDashboardState extends State<BoundaryDashboard> {
   // Intercept State
   final TextEditingController _inputController = TextEditingController(
     text: '''{
-  "name": "Pushkar Wagh",
-  "age": 18,
+  "name": "Test User",
+  "age": 43,
   "city": "Pune",
   "occupation": "Systems Architect",
   "bank_account": "1234-5678-9012",
@@ -63,12 +133,13 @@ class _BoundaryDashboardState extends State<BoundaryDashboard> {
   // --- API CALLS ---
 
   Future<void> _generateAIPolicy() async {
+    final sampleData = _parseInput();
+    if (sampleData == null) return;
     setState(() => _isGeneratingPolicy = true);
     try {
-      final sampleData = jsonDecode(_inputController.text) as Map<String, dynamic>;
       final response = await http.post(
         Uri.parse("$apiUrl/generate-policy"),
-        headers: {"Content-Type": "application/json"},
+        headers: _jsonHeaders,
         body: jsonEncode({
           "app_context": _contextController.text,
           "destination": _destination,
@@ -85,12 +156,12 @@ class _BoundaryDashboardState extends State<BoundaryDashboard> {
           _lockedRules = { for (var item in _proposedRules!) item['field']: item['action'] };
         });
       } else {
-        _showError("AI Generation Failed: ${response.body}");
+        _showError("AI generation failed: ${_errorDetail(response)}");
       }
     } catch (e) {
-      _showError("Connection failed. Is Ollama running?");
+      _showError("Could not reach the Boundary API at $apiUrl.");
     } finally {
-      setState(() => _isGeneratingPolicy = false);
+      if (mounted) setState(() => _isGeneratingPolicy = false);
     }
   }
 
@@ -98,7 +169,7 @@ class _BoundaryDashboardState extends State<BoundaryDashboard> {
     try {
       final response = await http.post(
         Uri.parse("$apiUrl/save-policy"),
-        headers: {"Content-Type": "application/json"},
+        headers: _jsonHeaders,
         body: jsonEncode({
           "destination": _destination,
           "purpose": _purpose,
@@ -108,33 +179,39 @@ class _BoundaryDashboardState extends State<BoundaryDashboard> {
       if (response.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Policy Locked Successfully. Engine reloaded."), backgroundColor: Colors.green));
         setState(() => _isConfigMode = false); // Switch back to live intercept
+        _loadRoutes();
+      } else {
+        _showError("Policy rejected: ${_errorDetail(response)}");
       }
     } catch (e) {
-      _showError("Failed to save policy.");
+      _showError("Failed to save policy: could not reach $apiUrl.");
     }
   }
 
   Future<void> _runBoundaryEngine() async {
+    final payload = _parseInput();
+    if (payload == null) return;
     setState(() => _isIntercepting = true);
     try {
       final response = await http.post(
         Uri.parse("$apiUrl/protect"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"data": jsonDecode(_inputController.text), "destination": _destination, "purpose": _purpose}),
+        headers: _jsonHeaders,
+        body: jsonEncode({"data": payload, "destination": _destination, "purpose": _purpose}),
       );
       if (response.statusCode == 200) {
         setState(() => _interceptResult = jsonDecode(response.body));
       } else {
-        _showError("Server Error.");
+        _showError(_errorDetail(response));
       }
     } catch (e) {
-      _showError("Connection failed.");
+      _showError("Could not reach the Boundary API at $apiUrl.");
     } finally {
-      setState(() => _isIntercepting = false);
+      if (mounted) setState(() => _isIntercepting = false);
     }
   }
 
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message, style: const TextStyle(color: Colors.white)), backgroundColor: Colors.red));
   }
 
@@ -154,8 +231,11 @@ class _BoundaryDashboardState extends State<BoundaryDashboard> {
               const Text("SETUP MODE", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
               Switch(
                 value: _isConfigMode,
-                activeThumbColor: Colors.black,
-                onChanged: (val) => setState(() => _isConfigMode = val),
+                activeColor: Colors.black,
+                onChanged: (val) => setState(() {
+                  _isConfigMode = val;
+                  if (!_purposeOptions.contains(_purpose)) _purpose = _purposeOptions.first;
+                }),
               ),
               const SizedBox(width: 24),
             ],
@@ -183,9 +263,9 @@ class _BoundaryDashboardState extends State<BoundaryDashboard> {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Expanded(child: _buildDropdown("Destination", _destination, ['third_party_llm', 'internal_fraud_system', 'marketing_analytics'], (v) => setState(() => _destination = v!))),
+                  Expanded(child: _buildDropdown("Destination", _destination, _allDestinations, _onDestinationChanged)),
                   const SizedBox(width: 16),
-                  Expanded(child: _buildDropdown("Purpose", _purpose, ['customer_support', 'fraud_investigation', 'aggregate_analysis'], (v) => setState(() => _purpose = v!))),
+                  Expanded(child: _buildDropdown("Purpose", _purpose, _purposeOptions, _onPurposeChanged)),
                 ],
               ),
               const SizedBox(height: 24),
@@ -276,9 +356,9 @@ class _BoundaryDashboardState extends State<BoundaryDashboard> {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Expanded(child: _buildDropdown("Destination", _destination, ['third_party_llm', 'internal_fraud_system', 'marketing_analytics'], (v) => setState(() => _destination = v!))),
+                  Expanded(child: _buildDropdown("Destination", _destination, _allDestinations, _onDestinationChanged)),
                   const SizedBox(width: 16),
-                  Expanded(child: _buildDropdown("Purpose", _purpose, ['customer_support', 'fraud_investigation', 'aggregate_analysis'], (v) => setState(() => _purpose = v!))),
+                  Expanded(child: _buildDropdown("Purpose", _purpose, _purposeOptions, _onPurposeChanged)),
                 ],
               ),
               const SizedBox(height: 24),

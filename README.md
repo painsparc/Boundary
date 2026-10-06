@@ -333,18 +333,25 @@ The current implementation uses local JSONL logging rather than a centralized ob
 
 # Decision model
 
-The current prototype calculates overall risk as:
+Every request runs through the same stages:
+
+1. **Validate the route.** Unknown destinations/purposes are rejected (HTTP 422). A known pair with no configured policy is also rejected, rather than silently falling back.
+2. **Walk the payload.** Nested objects and lists are scanned, not just top-level strings. `null` values are dropped. Field names are normalised (`accountNumber`, `Account-Number` and `acct_no` all resolve to `bank_account`).
+3. **Detect.** Field-name aliases, value patterns (government-ID formats, Aadhaar with Verhoeff checksum), Presidio (score >= 0.4; `DATE_TIME` ignored, `LOCATION`/`NRP`/`URL` low-risk), and a semantic check on any multi-word string (embeddings when the model is available, plus an always-on keyword lexicon).
+4. **Decide.** All matching policy rules (field name and detected categories) are collected and the **strictest action wins** (`ALLOW < MASK < GENERALIZE < REDACT < BLOCK < REMOVE`). With no rule, values with risk >= 0.5 are blocked (zero-trust fallback); the explanation says so.
+5. **Transform.** Unknown actions fail closed (BLOCK). `GENERALIZE` on an unsupported field falls back to `REDACT`.
+6. **Re-assess the final payload.** Residual risk is recomputed from what is actually left in the output:
 
 ```text
 overall_risk =
-    max_field_sensitivity × (1 - destination_trust)
+    max_exposed_field_risk x (1 - destination_trust)
     +
-    linkage_risk × purpose_scope
+    residual_linkage_risk x purpose_scope          (capped at 1.0)
 ```
 
-The result is capped at `1.0`.
+If it exceeds `MAX_RESIDUAL_RISK` (0.5), Boundary escalates: exposed quasi-identifiers are generalised, then exposed sensitive fields are blocked, until the payload is within limit. Escalations are flagged in the explanations. `input_risk` reports the same formula on the raw input for comparison.
 
-Field decisions then resolve explicit policy rules before falling back to the prototype's default behaviour.
+7. **Explain and audit.** Every request writes a `request` audit record (including all-benign ones); changed or high-risk fields get `field` records. Each record carries the policy hash. Raw values are never logged.
 
 ```text
                          Input
@@ -387,7 +394,7 @@ Field decisions then resolve explicit policy rules before falling back to the pr
                             Explain + audit
 ```
 
-When no explicit policy action exists for a sufficiently high-risk field, the current engine applies a zero-trust fallback and blocks the value.
+When no explicit policy rule matches a sufficiently high-risk value, the engine applies the zero-trust fallback and blocks it (`fallback_used: true` in the explanation).
 
 ---
 
@@ -484,9 +491,17 @@ Example:
 ```json
 {
   "status": "ok",
-  "offline_first": true
+  "offline_first": true,
+  "semantic_backend": "lexicon",
+  "policy_hash": "3f9c1a0b2d4e5f67"
 }
 ```
+
+Returns `503` until the engine has loaded. `semantic_backend` is `embedding+lexicon` when the MiniLM model could be loaded, otherwise `lexicon` (offline fallback).
+
+## `GET /routes`
+
+Lists which purposes have a policy for each destination (used by the UI dropdowns).
 
 ## `POST /protect`
 
@@ -508,13 +523,16 @@ Request:
 }
 ```
 
+Returns `422` for an unknown destination/purpose, a pair with no policy, or an over-deep/over-large payload.
+
 Response fields include:
 
 ```text
 metadata
-  -> destination
-  -> purpose
-  -> risk_assessment
+  -> destination, purpose, audit_id
+  -> policy (hash, found, fallback_fields)
+  -> risk_assessment (overall_risk = final payload, input_risk, linkage_risk,
+                      residual_linkage_risk, residual_risk_limit, within_limit, escalations)
 
 explanations
 
@@ -531,17 +549,18 @@ The endpoint accepts:
 * purpose
 * sample fields
 
-It uses a locally running Ollama model to propose structured field-level actions.
+It uses a locally running Ollama model to propose structured field-level actions. Input is validated (field-name charset, length limits), the context is passed as untrusted data, and any proposal that breaks a security invariant (for example `ALLOW` on `bank_account` for an untrusted destination) is clamped to `BLOCK`. Returns `503` if Ollama is unreachable.
 
 ## `POST /save-policy`
 
-The endpoint writes reviewed rules into:
+Validates and writes reviewed rules into `src/policies.yaml`, then hot-reloads the policy (the ML models are not reloaded).
 
-```text
-src/policies.yaml
-```
+* Rules are **merged** into the existing block by default; send `"replace": true` to replace the block.
+* Actions must be one of `ALLOW, MASK, GENERALIZE, REDACT, BLOCK, REMOVE` (case-insensitive); destination and purpose must be known.
+* **Security invariant:** `bank_account`, `government_id`, `medical_context` and `financial_context` can never be `ALLOW` for a destination with trust below 0.90. Violations return `422` with the list of problems and nothing is written. The same check runs when the policy file is loaded, so a hand-edited unsafe file refuses to load.
+* Writes are atomic (temp file + `os.replace`) and serialised; the response includes `previous_hash` and `policy_hash`, and the change is audited.
 
-and reloads the engine.
+`/save-policy` and `/generate-policy` are admin endpoints: they require the `X-API-Key` header when `BOUNDARY_ADMIN_KEY` is set, and are otherwise restricted to loopback clients.
 
 ---
 
@@ -603,7 +622,7 @@ Boundary/
 |       +-- third_party_llm.json
 |
 +-- logs/
-|   +-- audit.jsonl
+|   +-- (audit.jsonl is written at runtime and git-ignored)
 |
 +-- presentation layer/
 |   +-- boundary_frontend/
@@ -616,14 +635,24 @@ Boundary/
 |   +-- api.py
 |   +-- client.py
 |   +-- config.py
+|   +-- fields.py
+|   +-- generate_examples.py
 |   +-- main.py
 |   +-- policies.yaml
-|   +-- test_boundary.py
+|   +-- policy.py
+|   +-- semantic.py
+|   +-- validators.py
 |
 +-- tests/
 |   +-- test_boundary.py
 |
++-- BUG_REPORT.md
++-- LICENSE
++-- REPRODUCIBILITY_VERIFICATION.md
++-- SETUP.md
 +-- dump_project.py
++-- pytest.ini
++-- requirements.txt
 +-- setup.ps1
 ```
 
@@ -632,14 +661,18 @@ Boundary/
 | File                                                 | Purpose                                                   |
 | ---------------------------------------------------- | --------------------------------------------------------- |
 | `src/main.py`                                        | Core `CoreEngine` implementation                          |
-| `src/config.py`                                      | Paths, trust baselines, purpose scopes, quasi-identifiers |
+| `src/config.py`                                      | Paths, trust baselines, thresholds, field vocabularies    |
+| `src/policy.py`                                      | Policy validation, security invariants, atomic saves      |
+| `src/fields.py`                                      | Field-name normalisation and aliases                      |
+| `src/semantic.py`                                    | Embedding + lexicon contextual detection                  |
+| `src/generate_examples.py`                           | Regenerates `data/output/` (run after policy changes)     |
 | `src/policies.yaml`                                  | Destination/purpose policy matrix                         |
 | `src/api.py`                                         | FastAPI service                                           |
 | `src/client.py`                                      | Python API demonstration client                           |
 | `tests/test_boundary.py`                             | Core automated tests                                      |
 | `data/input/fintech_support_ticket.json`             | Synthetic input fixture                                   |
 | `data/output/`                                       | Example transformed outputs                               |
-| `logs/audit.jsonl`                                   | Decision audit records                                    |
+| `logs/audit.jsonl`                                   | Runtime audit records (git-ignored)                       |
 | `presentation layer/boundary_frontend/lib/main.dart` | Flutter presentation layer                                |
 
 ---
@@ -728,34 +761,14 @@ and prints the resulting JSON.
 
 # Run tests
 
-The current test suite covers three core behaviours:
+The suite (`tests/test_boundary.py`, ~70 cases) covers:
 
-### Composite linkage
+* the original behaviours: composite linkage, semantic detection, differential outputs per destination
+* every item in `BUG_REPORT.md` (policy/runtime consistency, renamed fields and value patterns, unsafe-policy rejection, unsupported combinations, residual-risk re-check, stale example outputs)
+* nested/list payloads, fail-closed actions, `MASK`/`GENERALIZE` edge cases, null and alias-insensitive linkage, false-positive guards on operational fields, input limits
+* audit completeness (and that raw values are never logged), CORS, admin-endpoint protection, 503 when the engine is not ready, AI-proposal clamping
 
-Checks that multiple configured quasi-identifiers produce the expected prototype linkage-risk level.
-
-### Semantic detection
-
-Checks that:
-
-```text
-Patient requires treatment for high blood pressure.
-```
-
-is classified as:
-
-```text
-medical_context
-```
-
-### Differential outputs
-
-Checks that the same data receives different treatment for:
-
-```text
-internal_fraud_system
-third_party_llm
-```
+Tests use temporary policy and audit files, so they never modify tracked files.
 
 Run:
 
@@ -876,6 +889,8 @@ destination
           +-- field/category -> action
 ```
 
+Rule keys are normalised and aliased, so `gov_id` and `GovernmentID` both configure `government_id`. After editing `policies.yaml`, run `python src/generate_examples.py` to refresh `data/output/`; the test suite fails if the committed examples are stale.
+
 ---
 
 # Security considerations
@@ -888,12 +903,11 @@ For the current prototype:
 * treat input/output files as potentially sensitive
 * review audit logs before publishing them
 * do not expose the API directly to an untrusted network
-* add authentication and authorization before any internet-facing deployment
-* tighten CORS for non-demo deployments
+* `/protect` itself has no authentication; add authentication and authorization before any internet-facing deployment
+* policy-changing endpoints require `X-API-Key` when `BOUNDARY_ADMIN_KEY` is set, otherwise they accept loopback clients only
+* CORS allows only `localhost` / `127.0.0.1` origins by default; set `BOUNDARY_CORS_ORIGINS` (comma-separated) for others
 * use proper secret management for production systems
-* protect or replace local audit storage for production use
-
-The current FastAPI application allows all CORS origins because the bundled Flutter interface is designed for local/demo communication.
+* protect or replace local audit storage for production use (`BOUNDARY_AUDIT_LOG` overrides the path)
 
 ---
 
@@ -925,7 +939,7 @@ Boundary is a prototype rather than a production privacy platform.
 
 ### Detection limitations
 
-Sensitive-data detection is dependent on Presidio, static mappings, and the semantic embedding heuristic. False positives and false negatives are possible.
+Sensitive-data detection is dependent on Presidio, field-name aliases, a few value patterns, and the semantic heuristic. False positives and false negatives are possible; names outside the alias list holding values that match no pattern (for example a free-form account reference) are only caught if Presidio or the semantic layer flags them.
 
 ### Linkage-risk limitations
 
@@ -940,11 +954,11 @@ It does not:
 
 ### Semantic limitations
 
-The semantic classifier uses a compact embedding model and manually selected anchor phrases. It is not trained specifically for every domain.
+The semantic classifier uses a compact embedding model with manually selected anchor phrases, plus a keyword lexicon that always runs. When the model cannot be downloaded the engine runs lexicon-only (reported by `/health`). It is not trained specifically for every domain.
 
 ### Policy limitations
 
-The YAML grammar and transformation functions are intentionally small.
+The YAML grammar and transformation functions are intentionally small. `GENERALIZE` is implemented for `age`, `city`, `region` and `postal_code`; other fields fall back to `REDACT`. Residual-risk escalation can override an explicit `ALLOW`/`MASK` on quasi-identifiers.
 
 ### Destination limitations
 
@@ -970,15 +984,9 @@ The repository currently contains:
 * presentation-layer source
 * audit records
 
-The repository currently does **not** contain:
+Dependencies are pinned in `requirements.txt`, and `pytest` runs the suite offline (the embedding model is optional).
 
-* pinned Python dependency versions
-* a Python lockfile
-* Dockerfile
-* Docker Compose configuration
-* CI workflow defining a clean reference environment
-
-Therefore the current project should be considered **source-reproducible with manual environment setup**, not fully environment-pinned or container-reproducible.
+The repository still does **not** contain a Python lockfile, Dockerfile, Docker Compose configuration or CI workflow. See `REPRODUCIBILITY_VERIFICATION.md` for what has and has not been verified on a clean machine.
 
 ---
 
@@ -1094,11 +1102,7 @@ Each third-party component remains subject to its own license and terms.
 
 # License
 
-At the time this README was prepared, the repository did **not** contain a root `LICENSE` file.
-
-Public visibility of a GitHub repository does not by itself grant permission to copy, modify, or redistribute its original code.
-
-If this repository is intended to be released under an open-source license, add the chosen license at the repository root.
+Boundary is released under the MIT License. See the `LICENSE` file at the repository root.
 
 ---
 

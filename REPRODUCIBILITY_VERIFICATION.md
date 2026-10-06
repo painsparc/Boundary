@@ -30,16 +30,22 @@ Python 3.11.x
 
 ## Runtime verification
 
-The current tool environment could not reach GitHub/PyPI, so these cannot honestly be marked passed here:
+Verified (Ubuntu 24 sandbox, Python 3.12.3, venv; 2026-10-05):
 
-- [ ] Fresh `pip install -r requirements.txt`
-- [ ] Fresh model download
-- [ ] `pytest -q`
-- [ ] `/health`
-- [ ] `/protect`
-- [ ] `src/client.py`
-- [ ] Flutter runtime
-- [ ] Ollama `/generate-policy`
+- [x] `pytest -q` passes (about 70 tests) with presidio-analyzer, spaCy `en_core_web_lg`, FastAPI, PyYAML, numpy, httpx
+- [x] `uvicorn src.api:app` starts from the repository root; `/health`, `/routes`, `/protect` respond
+- [x] `src/client.py` runs against the live server
+- [x] Unsafe `/save-policy` returns 422 and leaves `policies.yaml` unchanged; foreign-origin CORS preflight gets no allow-origin header
+- [x] Pinned versions resolve under `pip install --dry-run -r requirements.txt` (Python 3.12)
+
+Not verified (blocked or unavailable in the sandbox):
+
+- [ ] Full real `pip install -r requirements.txt` including torch / sentence-transformers
+- [ ] MiniLM model download (Hugging Face unreachable); the suite ran in lexicon-only mode (`/health` reports `semantic_backend`)
+- [ ] Python 3.11 specifically
+- [ ] `setup.ps1` on Windows
+- [ ] Flutter build and widget test (no Flutter SDK; Dart edits were only bracket-checked)
+- [ ] Ollama `/generate-policy` against a real model (covered by a mocked-client test only)
 
 ## Final acceptance
 

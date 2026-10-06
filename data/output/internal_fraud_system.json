@@ -1,145 +1,161 @@
 {
-    "metadata": {
-        "audit_id": "c60dd463-4451-4aff-9ced-d58ee2f2b2b2",
-        "destination": "internal_fraud_system",
-        "purpose": "fraud_investigation",
-        "risk_assessment": {
-            "overall_risk": 0.22,
-            "max_sensitivity": 0.95,
-            "linkage_risk": 0.85,
-            "destination_trust": 0.95,
-            "purpose_scope": 0.2
-        }
+  "metadata": {
+    "audit_id": "example-internal_fraud_system",
+    "destination": "internal_fraud_system",
+    "purpose": "fraud_investigation",
+    "policy": {
+      "hash": "e97b0796381d699c",
+      "found": true,
+      "fallback_fields": 2
     },
-    "explanations": [
-        {
-            "field": "name",
-            "categories": [
-                "PERSON"
-            ],
-            "action": "ALLOW",
-            "risk": 0.8,
-            "reason": "Direct field policy enforcement: name",
-            "detection_method": "presidio_pattern"
-        },
-        {
-            "field": "phone",
-            "categories": [
-                "PHONE_NUMBER"
-            ],
-            "action": "ALLOW",
-            "risk": 0.8,
-            "reason": "Direct field policy enforcement: phone",
-            "detection_method": "presidio_pattern"
-        },
-        {
-            "field": "email",
-            "categories": [
-                "EMAIL_ADDRESS"
-            ],
-            "action": "ALLOW",
-            "risk": 0.8,
-            "reason": "Direct field policy enforcement: email",
-            "detection_method": "presidio_pattern"
-        },
-        {
-            "field": "age",
-            "categories": [
-                "quasi_identifier"
-            ],
-            "action": "ALLOW",
-            "risk": 0.85,
-            "reason": "Direct field policy enforcement: age",
-            "detection_method": "heuristic_linkage"
-        },
-        {
-            "field": "city",
-            "categories": [
-                "LOCATION",
-                "quasi_identifier"
-            ],
-            "action": "ALLOW",
-            "risk": 0.85,
-            "reason": "Direct field policy enforcement: city",
-            "detection_method": "presidio_pattern+heuristic_linkage"
-        },
-        {
-            "field": "occupation",
-            "categories": [
-                "quasi_identifier"
-            ],
-            "action": "ALLOW",
-            "risk": 0.85,
-            "reason": "Direct field policy enforcement: occupation",
-            "detection_method": "heuristic_linkage"
-        },
-        {
-            "field": "government_id",
-            "categories": [
-                "US_DRIVER_LICENSE",
-                "government_id"
-            ],
-            "action": "ALLOW",
-            "risk": 0.95,
-            "reason": "Direct field policy enforcement: government_id",
-            "detection_method": "presidio_pattern+static_mapping"
-        },
-        {
-            "field": "bank_account",
-            "categories": [
-                "DATE_TIME",
-                "bank_account"
-            ],
-            "action": "ALLOW",
-            "risk": 0.95,
-            "reason": "Direct field policy enforcement: bank_account",
-            "detection_method": "presidio_pattern+static_mapping"
-        },
-        {
-            "field": "transaction_id",
-            "categories": [
-                "US_DRIVER_LICENSE"
-            ],
-            "action": "ALLOW",
-            "risk": 0.8,
-            "reason": "No sensitive patterns detected; default allow.",
-            "detection_method": "presidio_pattern"
-        },
-        {
-            "field": "error_code",
-            "categories": [
-                "LOCATION"
-            ],
-            "action": "ALLOW",
-            "risk": 0.8,
-            "reason": "No sensitive patterns detected; default allow.",
-            "detection_method": "presidio_pattern"
-        },
-        {
-            "field": "free_text_note",
-            "categories": [
-                "medical_context"
-            ],
-            "action": "BLOCK",
-            "risk": 0.9,
-            "reason": "Policy enforcement on detected category: medical_context",
-            "detection_method": "semantic_embedding"
-        }
-    ],
-    "data": {
-        "name": "Rahul Sharma",
-        "phone": "+919876543210",
-        "email": "rahul@example.com",
-        "age": 43,
-        "city": "Pune",
-        "occupation": "Cardiologist",
-        "government_id": "GOV-482913",
-        "bank_account": "123456789012",
-        "transaction_id": "TXN-847291",
-        "merchant": "Example Store",
-        "amount": 18450,
-        "error_code": "PAY-402",
-        "transaction_category": "retail",
-        "free_text_note": "[BLOCKED]"
+    "risk_assessment": {
+      "overall_risk": 0.22,
+      "input_risk": 0.22,
+      "max_sensitivity": 0.95,
+      "linkage_risk": 0.85,
+      "residual_linkage_risk": 0.85,
+      "residual_risk_limit": 0.5,
+      "within_limit": true,
+      "escalations": 0,
+      "destination_trust": 0.95,
+      "purpose_scope": 0.2
     }
+  },
+  "explanations": [
+    {
+      "field": "name",
+      "categories": [
+        "name"
+      ],
+      "action": "REDACT",
+      "risk": 0.8,
+      "reason": "Explicit policy rule name=REDACT",
+      "detection_method": "field_alias+presidio_pattern",
+      "policy_rule": true,
+      "fallback_used": false,
+      "escalated": false
+    },
+    {
+      "field": "phone",
+      "categories": [
+        "phone"
+      ],
+      "action": "BLOCK",
+      "risk": 0.8,
+      "reason": "ZERO-TRUST FALLBACK: sensitive data detected with no explicit policy rule",
+      "detection_method": "field_alias+presidio_pattern",
+      "policy_rule": false,
+      "fallback_used": true,
+      "escalated": false
+    },
+    {
+      "field": "email",
+      "categories": [
+        "email",
+        "url"
+      ],
+      "action": "BLOCK",
+      "risk": 0.8,
+      "reason": "ZERO-TRUST FALLBACK: sensitive data detected with no explicit policy rule",
+      "detection_method": "field_alias+presidio_pattern",
+      "policy_rule": false,
+      "fallback_used": true,
+      "escalated": false
+    },
+    {
+      "field": "age",
+      "categories": [
+        "quasi_identifier"
+      ],
+      "action": "MASK",
+      "risk": 0.85,
+      "reason": "Explicit policy rule age=MASK",
+      "detection_method": "heuristic_linkage",
+      "policy_rule": true,
+      "fallback_used": false,
+      "escalated": false
+    },
+    {
+      "field": "city",
+      "categories": [
+        "location",
+        "quasi_identifier"
+      ],
+      "action": "ALLOW",
+      "risk": 0.85,
+      "reason": "Explicit policy rule city=ALLOW",
+      "detection_method": "presidio_pattern+heuristic_linkage",
+      "policy_rule": true,
+      "fallback_used": false,
+      "escalated": false
+    },
+    {
+      "field": "occupation",
+      "categories": [
+        "quasi_identifier"
+      ],
+      "action": "ALLOW",
+      "risk": 0.85,
+      "reason": "Explicit policy rule occupation=ALLOW",
+      "detection_method": "heuristic_linkage",
+      "policy_rule": true,
+      "fallback_used": false,
+      "escalated": false
+    },
+    {
+      "field": "government_id",
+      "categories": [
+        "government_id"
+      ],
+      "action": "BLOCK",
+      "risk": 0.95,
+      "reason": "Explicit policy rule government_id=BLOCK",
+      "detection_method": "static_mapping+value_pattern",
+      "policy_rule": true,
+      "fallback_used": false,
+      "escalated": false
+    },
+    {
+      "field": "bank_account",
+      "categories": [
+        "bank_account"
+      ],
+      "action": "ALLOW",
+      "risk": 0.95,
+      "reason": "Explicit policy rule bank_account=ALLOW",
+      "detection_method": "static_mapping",
+      "policy_rule": true,
+      "fallback_used": false,
+      "escalated": false
+    },
+    {
+      "field": "free_text_note",
+      "categories": [
+        "medical_context"
+      ],
+      "action": "MASK",
+      "risk": 0.9,
+      "reason": "Explicit policy rule free_text_note=MASK",
+      "detection_method": "semantic_lexicon",
+      "policy_rule": true,
+      "fallback_used": false,
+      "escalated": false
+    }
+  ],
+  "data": {
+    "name": "[REDACTED]",
+    "phone": "[BLOCKED]",
+    "email": "[BLOCKED]",
+    "age": "4***",
+    "city": "Pune",
+    "occupation": "Cardiologist",
+    "government_id": "[BLOCKED]",
+    "bank_account": "123456789012",
+    "transaction_id": "TXN-847291",
+    "merchant": "Example Store",
+    "amount": 18450,
+    "error_code": "PAY-402",
+    "transaction_category": "retail",
+    "free_text_note": "C***"
+  }
 }

@@ -1,3 +1,22 @@
+# Resolution status
+
+All items below, plus the additional findings from the follow-up pipeline analysis, are fixed and covered by `tests/test_boundary.py`.
+
+| # | Issue | Fix | Regression test |
+|---|-------|-----|-----------------|
+| 1 | Internal-fraud runtime disagrees with policy | Not reproducible on the committed policy; root cause was `/save-policy` overwriting blocks with unvalidated, UI-generated rules. Saves now merge, validate and are audited; explanations show `policy_rule` vs `fallback_used`; policy hash is in every response and audit record | `test_bug1_*`, `test_save_merges_*` |
+| 2 | Detection depends on field names | Key normalisation + alias table, value patterns (GOV-ids, PAN, SSN, Aadhaar with checksum), Presidio entity mapping, nested/list/numeric scanning | `test_bug2_*`, `test_nested_and_list_*` |
+| 3 | Unsafe policies accepted | `policy.py` validates actions, routes and security invariants (no `ALLOW` of bank/government-id/medical/financial data below trust 0.90) on save **and** load; AI proposals are clamped | `test_bug3_*`, `test_generate_policy_*` |
+| 4 | Unsupported combinations silently BLOCK everything | Unknown routes and unconfigured pairs return 422 with guidance; `/routes` drives the UI | `test_bug4_*` |
+| 5 | Linkage risk not re-checked after transformation | Final payload re-assessed; exposed quasi-identifiers are generalised/blocked until within `MAX_RESIDUAL_RISK`; `overall_risk` now describes the output | `test_bug5_*` |
+| 6 | Stale committed outputs | `src/generate_examples.py` regenerates them; a test fails if they drift from the policy hash | `test_bug6_*` |
+
+Additional fixes: fail-closed unknown actions, strictest-rule-wins precedence, `MASK`/`GENERALIZE` crashes and literal `"Generalized"` output, Presidio false positives (score threshold, ignored/low-risk entities), semantic scan on any text field with an offline lexicon fallback, null/case-insensitive linkage, request-level audit records, atomic locked policy writes, restricted CORS, admin-endpoint protection, `/health` 503 and `/protect` 422 handling, Flutter stale-rule/error-handling fixes, tracked `__pycache__`/audit log removed, `.gitignore` added.
+
+---
+
+# Original report
+
 # Boundary — Bug Findings, Impact & Fix Plan
 
 ## 1. BUG: Runtime Policy Mismatch in Internal Fraud Investigation

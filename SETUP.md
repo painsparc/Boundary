@@ -250,3 +250,18 @@ A clean setup is considered verified only when all of these are true:
 This deliverable was prepared from the live GitHub source tree and dependency metadata, but the execution environment used for this pass could not establish outbound access to GitHub/PyPI. Therefore, a successful `pip install` and test run on a genuinely clean internet-connected machine still needs to be recorded as the final empirical verification step.
 
 Do not label the repository "fully fresh-machine verified" until that final run succeeds.
+
+## Runtime configuration (environment variables)
+
+| Variable | Purpose |
+| --- | --- |
+| `BOUNDARY_ADMIN_KEY` | If set, `/save-policy` and `/generate-policy` require this value in the `X-API-Key` header. If unset, they accept loopback clients only. |
+| `BOUNDARY_CORS_ORIGINS` | Comma-separated extra allowed origins. `localhost` / `127.0.0.1` origins are always allowed. |
+| `BOUNDARY_AUDIT_LOG` | Audit log path (default `logs/audit.jsonl`, git-ignored). |
+| `BOUNDARY_POLICY_FILE` | Policy file path (default `src/policies.yaml`). |
+| `BOUNDARY_DISABLE_EMBEDDINGS=1` | Skip the MiniLM model and use the keyword lexicon only (also the automatic fallback when the model cannot be downloaded). |
+
+The Flutter app reads `--dart-define=BOUNDARY_API_URL=...` and `--dart-define=BOUNDARY_ADMIN_KEY=...`.
+
+After editing `src/policies.yaml`, run `python src/generate_examples.py` to refresh `data/output/`.
+
